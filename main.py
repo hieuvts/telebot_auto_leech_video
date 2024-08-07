@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 import os
 load_dotenv(".env")  # take environment variables
 import logging
+import html
+import json
+import traceback
 import re
 import yt_dlp
 from yt_dlp import YoutubeDL
@@ -23,7 +26,7 @@ MAX_LENGTH_VIDEO = 300 # Seconds
 MAX_SIZE_VIDEO = 45000000 # 54MB
 # Enable logging
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.WARNING
 )
 # set higher logging level for httpx to avoid all GET and POST requests being logged
 # logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -66,6 +69,9 @@ ydl_opts = {
 
 
 async def handleNormalMessage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Ignore Grafana alert
+    if update.message is None:
+        return
     # Check if message contains video URL
     validUrlFlag = 0
     matchedUrls = REGEX_MATCH_URL.search(update.message.text)
@@ -79,7 +85,7 @@ async def handleNormalMessage(update: Update, context: ContextTypes.DEFAULT_TYPE
                 with YoutubeDL(ydl_opts) as ydl:
                     try:
                         error_code = ydl.download(matchedUrl)
-                        print("Download code " + str(error_code))
+                        print("Download finishded. Code -> " + str(error_code))
                     except:
                         print("Download video error")
                         validUrlFlag = -1
@@ -93,29 +99,43 @@ async def handleNormalMessage(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(text="Video is too large " + str(video_size/1000000) + " MB")
         else:
             await update.message.reply_video(video="temp.mp4",
-                                reply_to_message_id=update.message.message_id)
+                                reply_to_message_id=update.message.message_id, read_timeout=100, write_timeout=100)
         os.remove("temp.mp4")
     elif validUrlFlag == -1:
         await update.message.reply_text(text="Cannot download video! ⚡")
+    print("\n============\n")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error("\nException while handling an update:", exc_info=context.error)
+    """Log the error and send a telegram message to notify the developer."""
+    # Log the error before we do anything else, so we can see it even if something breaks.
+    logger.error("Exception while handling an update:", exc_info=context.error)
+    # traceback.format_exception returns the usual python message about an exception, but as a
+    # list of strings rather than a single string, so we have to join them together.
+    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
+    tb_string = "".join(tb_list)
 
     # Build the message with some markup and additional information about what happened.
     # You might need to add some logic to deal with messages longer than the 4096 character limit.
     update_str = update.to_dict() if isinstance(update, Update) else str(update)
     message = (
         "An exception was raised while handling an update\n"
-        f"updateString = {update_str}"
-        f"context.chat_data = {str(context.chat_data)}\n\n"
-        f"context.user_data = {str(context.user_data)}\n\n"
+        f"<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}"
+        "</pre>\n\n"
+        f"<pre>{html.escape(tb_string)}</pre>"
     )
+    message = (message[:4000] + '..') if len(message) > 4000 else message
 
     # Finally, send the message
     await context.bot.send_message(
         chat_id=DEVELOPER_CHAT_ID, text=message, parse_mode=ParseMode.HTML
     )
+
+async def test_err(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await context.bot.send_message(
+        chat_id=DEVELOPER_CHAT_ID, text="Error happens", parse_mode=ParseMode.HTML
+    )
+    raise ValueError('A very specific bad thing happened.') 
 
 def main() -> None:
     """Start the bot."""
@@ -125,11 +145,12 @@ def main() -> None:
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("ping", handleStartCmd))
     application.add_handler(CommandHandler("help", handleHelpCmd))
+    application.add_handler(CommandHandler("test", test_err))
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handleNormalMessage))
     application.add_error_handler(error_handler)
-    print("Start")
+    print("---Start---\n")
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.MESSAGE)
 
