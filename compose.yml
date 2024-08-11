@@ -1,0 +1,3 @@
+services:
+  auto-get-video-bot:
+    build: ./
