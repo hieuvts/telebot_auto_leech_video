@@ -16,6 +16,8 @@ from telegram import ForceReply, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
+CURRENT_PATH = os.path.dirname(os.path.realpath(__file__))
+YT_DLP_OUTPUT_PATH = os.path.join(CURRENT_PATH, "temp.mp4")
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 DEVELOPER_CHAT_ID = os.getenv('DEVELOPER_CHAT_ID')
 REGEX_MATCH_URL = re.compile(r"(?P<url>https?://[^\s]+)")
@@ -23,7 +25,8 @@ WHITELIST_KEYWORDS = ['vt.tiktok.com', 'fb.watch', 'facebook.com/reel', 'faceboo
 
 MIN_LENGTH_VIDEO = 15
 MAX_LENGTH_VIDEO = 300 # Seconds
-MAX_SIZE_VIDEO = 45000000 # 54MB
+MAX_SIZE_VIDEO = 45000000 # 45MB
+MAX_HTTPX_TIMEOUT = 120 # 120s
 # Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.WARNING
@@ -64,7 +67,7 @@ ydl_opts = {
     # 'match_filter': validate_video_length, # Not work with facebook video
     'quiet': True,
     'allow_unplayable_formats': False,
-    'outtmpl': {'default': 'temp.mp4'},
+    'outtmpl': {'default': YT_DLP_OUTPUT_PATH},
 }
 
 
@@ -73,7 +76,8 @@ async def handleNormalMessage(update: Update, context: ContextTypes.DEFAULT_TYPE
     if update.message is None:
         return
     # Check if message contains video URL
-    validUrlFlag = 0
+    successFlag = 0
+    errorMessage = ""
     matchedUrls = REGEX_MATCH_URL.search(update.message.text)
     if (matchedUrls):
         matchedUrl = matchedUrls.group("url")
@@ -81,29 +85,28 @@ async def handleNormalMessage(update: Update, context: ContextTypes.DEFAULT_TYPE
             if keyword in matchedUrl:
                 print("Message contains valid URL " + matchedUrl)
                 await update.message.reply_chat_action(action="upload_video")
-                validUrlFlag = 1
+                successFlag = 1
                 with YoutubeDL(ydl_opts) as ydl:
                     try:
                         error_code = ydl.download(matchedUrl)
                         print("Download finishded. Code -> " + str(error_code))
-                    except:
-                        print("Download video error")
-                        validUrlFlag = -1
-    if validUrlFlag == 1:
+                    except Exception as e:
+                        errorMessage = str(e)
+                        successFlag = -1
+    if successFlag == 1:
         # await update.message.reply_text(text="Đường dẫn video hợp lệ " + matchedUrl,
         #                                 reply_to_message_id=update.message.message_id)
         # Check file size
-        video_size = os.path.getsize("temp.mp4")
+        video_size = os.path.getsize(YT_DLP_OUTPUT_PATH)
         if (video_size >= MAX_SIZE_VIDEO):
-            print("Video is too large " + str(video_size/1000000) + " MB")
-            await update.message.reply_text(text="Video is too large " + str(video_size/1000000) + " MB")
+            await update.message.reply_text(text="Video is too large (" + str(video_size/1000000) + " MB). Only support <50MB video")
         else:
-            await update.message.reply_video(video="temp.mp4",
-                                reply_to_message_id=update.message.message_id, read_timeout=100, write_timeout=100)
-        os.remove("temp.mp4")
-    elif validUrlFlag == -1:
-        await update.message.reply_text(text="Cannot download video! ⚡")
-    print("\n============\n")
+            await update.message.reply_video(video=YT_DLP_OUTPUT_PATH,
+                                reply_to_message_id=update.message.message_id, read_timeout=MAX_HTTPX_TIMEOUT, write_timeout=MAX_HTTPX_TIMEOUT)
+        os.remove(YT_DLP_OUTPUT_PATH)
+    elif successFlag == -1:
+        await update.message.reply_text(text="Cannot download video 🐛🐛 -> " + errorMessage)
+        print("\n======END ERROR======\n")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -114,22 +117,26 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     # list of strings rather than a single string, so we have to join them together.
     tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
     tb_string = "".join(tb_list)
-
-    # Build the message with some markup and additional information about what happened.
-    # You might need to add some logic to deal with messages longer than the 4096 character limit.
-    update_str = update.to_dict() if isinstance(update, Update) else str(update)
+    tb_string = (tb_string[:4000] + '..') if len(tb_string) > 3900 else tb_string
     message = (
         "An exception was raised while handling an update\n"
-        f"<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}"
         "</pre>\n\n"
         f"<pre>{html.escape(tb_string)}</pre>"
     )
-    message = (message[:4000] + '..') if len(message) > 4000 else message
 
-    # Finally, send the message
-    await context.bot.send_message(
-        chat_id=DEVELOPER_CHAT_ID, text=message, parse_mode=ParseMode.HTML
-    )
+    try:
+        # Finally, send the message
+        await context.bot.send_message(
+            chat_id=DEVELOPER_CHAT_ID, text=message, parse_mode=ParseMode.HTML,
+            read_timeout=MAX_HTTPX_TIMEOUT, write_timeout=MAX_HTTPX_TIMEOUT
+        )
+    except Exception as e:
+        print("HTML Error message " + message)
+        await context.bot.send_message(
+            chat_id=DEVELOPER_CHAT_ID, text="\t ⚠️⚠️Unexpected error: " + str(e),
+            read_timeout=MAX_HTTPX_TIMEOUT, write_timeout=MAX_HTTPX_TIMEOUT
+        )
+
 
 async def test_err(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await context.bot.send_message(
