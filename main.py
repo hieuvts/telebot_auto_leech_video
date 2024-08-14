@@ -63,11 +63,29 @@ def checkWhitelistedChatId(update: Update) -> bool:
 
 # Define a few command handlers. These usually take the two arguments update and
 # context.
-async def handleStartCmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handlePingCmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if checkWhitelistedChatId(update) == False:
+        # await context.bot.send_message(
+        #     chat_id=DEVELOPER_CHAT_ID,
+        #     text="Forbidden chat ID " + str(update.message.chat_id),
+        #     read_timeout=MAX_HTTPX_TIMEOUT,
+        #     write_timeout=MAX_HTTPX_TIMEOUT,
+        # )
+        print("Forbidden chat ID " + str(update.message.chat_id))
+        return False
     await update.message.reply_text(rf"Bot's alive! 🤖👋")
 
 
 async def handleHelpCmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if checkWhitelistedChatId(update) == False:
+        # await context.bot.send_message(
+        #     chat_id=DEVELOPER_CHAT_ID,
+        #     text="Forbidden chat ID " + str(update.message.chat_id),
+        #     read_timeout=MAX_HTTPX_TIMEOUT,
+        #     write_timeout=MAX_HTTPX_TIMEOUT,
+        # )
+        print("Forbidden chat ID " + str(update.message.chat_id))
+        return False
     await update.message.reply_text(
         rf"Hỗ trợ các link sau: \n'vt.tiktok.com', 'fb.watch', 'facebook.com/reel', 'facebook.com/watch', 'youtube.com/shorts'"
     )
@@ -95,6 +113,7 @@ ydl_opts = {
     "quiet": True,
     "allow_unplayable_formats": False,
     "outtmpl": {"default": YT_DLP_OUTPUT_PATH},
+    "source_address": "0.0.0.0",  # Force IPv4
 }
 
 
@@ -126,8 +145,7 @@ async def handleNormalMessage(
                 successFlag = 1
                 with YoutubeDL(ydl_opts) as ydl:
                     try:
-                        error_code = ydl.download(matchedUrl)
-                        print("Download finishded. Code -> " + str(error_code))
+                        ydl.download(matchedUrl)
                     except Exception as e:
                         errorMessage = str(e)
                         successFlag = -1
@@ -205,9 +223,9 @@ def main() -> None:
     application = Application.builder().token(BOT_TOKEN).build()
 
     # on different commands - answer in Telegram
-    application.add_handler(CommandHandler("ping", handleStartCmd))
+    application.add_handler(CommandHandler("ping", handlePingCmd))
     application.add_handler(CommandHandler("help", handleHelpCmd))
-    application.add_handler(CommandHandler("test", test_err))
+    # application.add_handler(CommandHandler("test", test_err))
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(
