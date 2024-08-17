@@ -26,6 +26,9 @@ from telegram.ext import (
 CURRENT_PATH = os.path.dirname(os.path.realpath(__file__))
 YT_DLP_OUTPUT_PATH = os.path.join(CURRENT_PATH, "temp.mp4")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_PORT = os.getenv("WEBHOOK_PORT")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 DEVELOPER_CHAT_ID = os.getenv("DEVELOPER_CHAT_ID")
 WHITELISTED_CHAT_ID = os.getenv("WHITELISTED_CHAT_ID").split(",")
 REGEX_MATCH_URL = re.compile(r"(?P<url>https?://[^\s]+)")
@@ -41,6 +44,7 @@ MIN_LENGTH_VIDEO = 15
 MAX_LENGTH_VIDEO = 300  # Seconds
 MAX_SIZE_VIDEO = 45000000  # 45MB
 MAX_HTTPX_TIMEOUT = 120  # 120s
+MAX_POOL_TIMEOUT = 20  # 20s
 # Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.WARNING
@@ -73,7 +77,12 @@ async def handlePingCmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # )
         print("Forbidden chat ID " + str(update.message.chat_id))
         return False
-    await update.message.reply_text(rf"Bot's alive! 🤖👋")
+    await update.message.reply_text(
+        rf"Bot's alive! 🤖👋",
+        read_timeout=MAX_HTTPX_TIMEOUT,
+        write_timeout=MAX_HTTPX_TIMEOUT,
+        pool_timeout=MAX_POOL_TIMEOUT,
+    )
 
 
 async def handleHelpCmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -166,6 +175,7 @@ async def handleNormalMessage(
                 reply_to_message_id=update.message.message_id,
                 read_timeout=MAX_HTTPX_TIMEOUT,
                 write_timeout=MAX_HTTPX_TIMEOUT,
+                pool_timeout=MAX_POOL_TIMEOUT,
             )
         os.remove(YT_DLP_OUTPUT_PATH)
     elif successFlag == -1:
@@ -207,6 +217,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             text="\t ⚠️⚠️Unexpected error: " + str(e),
             read_timeout=MAX_HTTPX_TIMEOUT,
             write_timeout=MAX_HTTPX_TIMEOUT,
+            pool_timeout=MAX_POOL_TIMEOUT,
         )
 
 
@@ -233,8 +244,17 @@ def main() -> None:
     )
     application.add_error_handler(error_handler)
     print("---Start---\n")
+    print("Listening URL: " + str(WEBHOOK_URL))
+    print("Listening PORT: ", str(WEBHOOK_PORT))
     # Run the bot until the user presses Ctrl-C
-    application.run_polling(allowed_updates=Update.MESSAGE)
+    # application.run_polling(allowed_updates=Update.MESSAGE)
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=WEBHOOK_PORT,
+        secret_token=WEBHOOK_SECRET,
+        webhook_url=WEBHOOK_URL,
+        allowed_updates=Update.MESSAGE,
+    )
 
 
 if __name__ == "__main__":
