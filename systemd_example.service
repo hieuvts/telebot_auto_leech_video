@@ -1,0 +1,17 @@
+[Unit]
+Description=My Lovely Service
+After=network.target
+
+[Service]
+Type=idle
+Restart=on-failure
+User=dietpi
+Environment="BOT_TOKEN=<>"
+Environment="DEVELOPER_CHAT_ID=<>"
+Environment="WHITELISTED_CHAT_ID=<>"
+Environment="WEBHOOK_PORT=<>"
+Environment="WEBHOOK_SECRET=<>"
+Environment="WEBHOOK_URL=<>"
+ExecStart=/usr/bin/python3 /path/to/project/main.py
+[Install]
+WantedBy=multi-user.target
