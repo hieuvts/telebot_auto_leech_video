@@ -250,6 +250,7 @@ def main() -> None:
     # application.run_polling(allowed_updates=Update.MESSAGE)
     application.run_webhook(
         listen="0.0.0.0",
+        bootstrap_retries=3,
         port=WEBHOOK_PORT,
         secret_token=WEBHOOK_SECRET,
         webhook_url=WEBHOOK_URL,
